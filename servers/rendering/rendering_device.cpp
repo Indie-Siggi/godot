@@ -1248,6 +1248,35 @@ Error RenderingDevice::buffer_update(RID p_buffer, uint32_t p_offset, uint32_t p
 	return _buffer_update(buffer, p_buffer, p_offset, p_size, p_data);
 }
 
+void RenderingDevice::_driver_callback_call(RDD *p_driver, RDD::CommandBufferID p_command_buffer, void *p_userdata) {
+	const Callable *callback = (const Callable *)p_userdata;
+	callback->call(p_driver->get_resource_native_handle(RDD::DRIVER_RESOURCE_COMMAND_BUFFER, p_command_buffer));
+}
+
+Error RenderingDevice::_driver_callback_add_bind(const Callable &p_callback, const TypedArray<RID> &p_resources, const Vector<int32_t> &p_usages) {
+	ERR_FAIL_COND_V(!p_callback.is_valid(), ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V_MSG(p_resources.size() != p_usages.size(), ERR_INVALID_PARAMETER, "Each resource needs a usage.");
+
+	LocalVector<CallbackResource> resources;
+	resources.resize(p_resources.size());
+	for (int i = 0; i < p_resources.size(); i++) {
+		ERR_FAIL_INDEX_V(p_usages[i], CALLBACK_RESOURCE_USAGE_MAX, ERR_INVALID_PARAMETER);
+		const RID rid = p_resources[i];
+		resources[i].rid = rid;
+		resources[i].type = texture_owner.owns(rid) ? CALLBACK_RESOURCE_TYPE_TEXTURE : CALLBACK_RESOURCE_TYPE_BUFFER;
+		resources[i].usage = CallbackResourceUsage(p_usages[i]);
+	}
+
+	// The callable is called when the graph executes, so it must outlive this call.
+	List<Callable> &callbacks = frames[frame].driver_callbacks;
+	callbacks.push_back(p_callback);
+	Error err = driver_callback_add(_driver_callback_call, &callbacks.back()->get(), VectorView<CallbackResource>(resources.ptr(), resources.size()));
+	if (err != OK) {
+		callbacks.pop_back();
+	}
+	return err;
+}
+
 Error RenderingDevice::driver_callback_add(RDD::DriverCallback p_callback, void *p_userdata, VectorView<CallbackResource> p_resources) {
 	ERR_RENDER_THREAD_GUARD_V(ERR_UNAVAILABLE);
 
@@ -8152,6 +8181,9 @@ void RenderingDevice::sync() {
 }
 
 void RenderingDevice::_free_pending_resources(int p_frame) {
+	// The frame's commands have executed, including its driver callbacks.
+	frames[p_frame].driver_callbacks.clear();
+
 	// Free in dependency usage order, so nothing weird happens.
 	// Pipelines.
 	while (frames[p_frame].render_pipelines_to_dispose_of.front()) {
@@ -9035,6 +9067,9 @@ uint64_t RenderingDevice::get_driver_resource(DriverResource p_resource, RID p_r
 
 			driver_id = render_pipeline->driver_id.id;
 		} break;
+		case DRIVER_RESOURCE_COMMAND_BUFFER: {
+			ERR_FAIL_V_MSG(0, "The command buffer is only available inside a driver callback, see driver_callback_add().");
+		} break;
 		default: {
 			ERR_FAIL_V(0);
 		} break;
@@ -9486,6 +9521,7 @@ void RenderingDevice::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_memory_usage", "type"), &RenderingDevice::get_memory_usage);
 
 	ClassDB::bind_method(D_METHOD("get_driver_resource", "resource", "rid", "index"), &RenderingDevice::get_driver_resource);
+	ClassDB::bind_method(D_METHOD("driver_callback_add", "callback", "resources", "usages"), &RenderingDevice::_driver_callback_add_bind);
 
 	ClassDB::bind_method(D_METHOD("get_perf_report"), &RenderingDevice::get_perf_report);
 
@@ -9521,6 +9557,7 @@ void RenderingDevice::_bind_methods() {
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_BUFFER);
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_COMPUTE_PIPELINE);
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_RENDER_PIPELINE);
+	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_COMMAND_BUFFER);
 #ifndef DISABLE_DEPRECATED
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_VULKAN_DEVICE);
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_VULKAN_PHYSICAL_DEVICE);
@@ -9536,6 +9573,32 @@ void RenderingDevice::_bind_methods() {
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_VULKAN_COMPUTE_PIPELINE);
 	BIND_ENUM_CONSTANT(DRIVER_RESOURCE_VULKAN_RENDER_PIPELINE);
 #endif
+
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_NONE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_COPY_FROM);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_COPY_TO);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_RESOLVE_FROM);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_RESOLVE_TO);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_UNIFORM_BUFFER_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_INDIRECT_BUFFER_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_TEXTURE_BUFFER_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_TEXTURE_BUFFER_READ_WRITE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_STORAGE_BUFFER_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_STORAGE_BUFFER_READ_WRITE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_VERTEX_BUFFER_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_INDEX_BUFFER_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_TEXTURE_SAMPLE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_STORAGE_IMAGE_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_STORAGE_IMAGE_READ_WRITE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ATTACHMENT_COLOR_READ_WRITE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ATTACHMENT_DEPTH_STENCIL_READ_WRITE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ATTACHMENT_FRAGMENT_SHADING_RATE_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ATTACHMENT_FRAGMENT_DENSITY_MAP_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ATTACHMENT_RASTERIZATION_RATE_MAP_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_GENERAL);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE);
+	BIND_ENUM_CONSTANT(CALLBACK_RESOURCE_USAGE_MAX);
 
 	BIND_ENUM_CONSTANT(DATA_FORMAT_R4G4_UNORM_PACK8);
 	BIND_ENUM_CONSTANT(DATA_FORMAT_R4G4B4A4_UNORM_PACK16);

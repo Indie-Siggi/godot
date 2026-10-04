@@ -1810,6 +1810,9 @@ private:
 		List<AccelerationStructure> acceleration_structures_to_dispose_of;
 		List<RaytracingPipeline> raytracing_pipelines_to_dispose_of;
 
+		// Callables of driver callbacks added through the bindings, kept until the frame's commands have executed.
+		List<Callable> driver_callbacks;
+
 		// Pending asynchronous data transfer for buffers.
 		LocalVector<RDD::BufferID> download_buffer_staging_buffers;
 		LocalVector<RDD::BufferCopyRegion> download_buffer_copy_regions;
@@ -2028,6 +2031,9 @@ private:
 
 	Error _buffer_update_bind(RID p_buffer, uint32_t p_offset, uint32_t p_size, const Vector<uint8_t> &p_data);
 
+	static void _driver_callback_call(RDD *p_driver, RDD::CommandBufferID p_command_buffer, void *p_userdata);
+	Error _driver_callback_add_bind(const Callable &p_callback, const TypedArray<RID> &p_resources, const Vector<int32_t> &p_usages);
+
 	RID _blas_create(const TypedArray<RDAccelerationStructureGeometry> &p_geometries, BitField<AccelerationStructureFlagBits> p_flags);
 	Error _tlas_build(RID p_tlas, const TypedArray<RDAccelerationStructureInstance> &p_instances);
 
@@ -2044,6 +2050,7 @@ private:
 
 VARIANT_ENUM_CAST_EXT(RenderingDeviceEnums::DeviceType, RenderingDevice::DeviceType)
 VARIANT_ENUM_CAST(RenderingDevice::DriverResource)
+VARIANT_ENUM_CAST(RenderingDevice::CallbackResourceUsage)
 VARIANT_ENUM_CAST(RenderingDevice::ShaderStage)
 VARIANT_ENUM_CAST(RenderingDevice::ShaderLanguage)
 VARIANT_ENUM_CAST(RenderingDevice::CompareOperator)

@@ -436,6 +436,17 @@
 				This method does nothing and always returns an empty [PackedInt64Array].
 			</description>
 		</method>
+		<method name="driver_callback_add">
+			<return type="int" enum="Error" />
+			<param index="0" name="callback" type="Callable" />
+			<param index="1" name="resources" type="RID[]" />
+			<param index="2" name="usages" type="PackedInt32Array" />
+			<description>
+				Adds a call to [param callback] to the command graph, so native commands can be recorded into the command buffer between the commands recorded before and after it. When the graph executes, [param callback] is called on the rendering thread with the native command buffer as its only argument (see [constant DRIVER_RESOURCE_COMMAND_BUFFER]).
+				[param resources] are the textures and buffers the callback accesses and [param usages] how it accesses each of them, as [enum CallbackResourceUsage] values. The graph synchronizes them with the surrounding commands and transitions each texture to the layout of its usage before the callback, and expects it in that layout afterwards (for example, [constant CALLBACK_RESOURCE_USAGE_COPY_FROM] is the transfer source layout).
+				[b]Note:[/b] Must be called on the rendering thread, outside of draw, compute and raytracing lists. The callback must not submit work or wait on the device; it can only record commands.
+			</description>
+		</method>
 		<method name="framebuffer_create">
 			<return type="RID" />
 			<param index="0" name="textures" type="RID[]" />
@@ -1443,6 +1454,10 @@
 			- Vulkan: [code]VkPipeline[/code].
 			- Metal: [code]MTLRenderPipelineState[/code].
 		</constant>
+		<constant name="DRIVER_RESOURCE_COMMAND_BUFFER" value="13" enum="DriverResource">
+			Native command buffer, only available as the argument of a callback added with [method driver_callback_add]. [method get_driver_resource] returns [code]0[/code] for it.
+			- Vulkan: [code]VkCommandBuffer[/code].
+		</constant>
 		<constant name="DRIVER_RESOURCE_VULKAN_DEVICE" value="0" enum="DriverResource" deprecated="Use [constant DRIVER_RESOURCE_LOGICAL_DEVICE] instead.">
 		</constant>
 		<constant name="DRIVER_RESOURCE_VULKAN_PHYSICAL_DEVICE" value="1" enum="DriverResource" deprecated="Use [constant DRIVER_RESOURCE_PHYSICAL_DEVICE] instead.">
@@ -1468,6 +1483,81 @@
 		<constant name="DRIVER_RESOURCE_VULKAN_COMPUTE_PIPELINE" value="11" enum="DriverResource" deprecated="Use [constant DRIVER_RESOURCE_COMPUTE_PIPELINE] instead.">
 		</constant>
 		<constant name="DRIVER_RESOURCE_VULKAN_RENDER_PIPELINE" value="12" enum="DriverResource" deprecated="Use [constant DRIVER_RESOURCE_RENDER_PIPELINE] instead.">
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_NONE" value="0" enum="CallbackResourceUsage">
+			The resource is not accessed.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_COPY_FROM" value="1" enum="CallbackResourceUsage">
+			The resource is the source of a copy.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_COPY_TO" value="2" enum="CallbackResourceUsage">
+			The resource is the destination of a copy.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_RESOLVE_FROM" value="3" enum="CallbackResourceUsage">
+			The texture is the source of a multisample resolve.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_RESOLVE_TO" value="4" enum="CallbackResourceUsage">
+			The texture is the destination of a multisample resolve.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_UNIFORM_BUFFER_READ" value="5" enum="CallbackResourceUsage">
+			The buffer is read as a uniform buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_INDIRECT_BUFFER_READ" value="6" enum="CallbackResourceUsage">
+			The buffer is read as an indirect draw or dispatch buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_TEXTURE_BUFFER_READ" value="7" enum="CallbackResourceUsage">
+			The buffer is read as a texture buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_TEXTURE_BUFFER_READ_WRITE" value="8" enum="CallbackResourceUsage">
+			The buffer is read and written as a texture buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_STORAGE_BUFFER_READ" value="9" enum="CallbackResourceUsage">
+			The buffer is read as a storage buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_STORAGE_BUFFER_READ_WRITE" value="10" enum="CallbackResourceUsage">
+			The buffer is read and written as a storage buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_VERTEX_BUFFER_READ" value="11" enum="CallbackResourceUsage">
+			The buffer is read as a vertex buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_INDEX_BUFFER_READ" value="12" enum="CallbackResourceUsage">
+			The buffer is read as an index buffer.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_TEXTURE_SAMPLE" value="13" enum="CallbackResourceUsage">
+			The texture is sampled in a shader.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_STORAGE_IMAGE_READ" value="14" enum="CallbackResourceUsage">
+			The texture is read as a storage image.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_STORAGE_IMAGE_READ_WRITE" value="15" enum="CallbackResourceUsage">
+			The texture is read and written as a storage image.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ATTACHMENT_COLOR_READ_WRITE" value="16" enum="CallbackResourceUsage">
+			The texture is read and written as a color attachment.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ATTACHMENT_DEPTH_STENCIL_READ_WRITE" value="17" enum="CallbackResourceUsage">
+			The texture is read and written as a depth-stencil attachment.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ATTACHMENT_FRAGMENT_SHADING_RATE_READ" value="18" enum="CallbackResourceUsage">
+			The texture is read as a fragment shading rate attachment.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ATTACHMENT_FRAGMENT_DENSITY_MAP_READ" value="19" enum="CallbackResourceUsage">
+			The texture is read as a fragment density map attachment.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ATTACHMENT_RASTERIZATION_RATE_MAP_READ" value="20" enum="CallbackResourceUsage">
+			The texture is read as a rasterization rate map (Metal).
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_GENERAL" value="21" enum="CallbackResourceUsage">
+			The resource is accessed in any way, in the general layout.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ" value="22" enum="CallbackResourceUsage">
+			The buffer is read as an acceleration structure.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE" value="23" enum="CallbackResourceUsage">
+			The buffer is read and written as an acceleration structure.
+		</constant>
+		<constant name="CALLBACK_RESOURCE_USAGE_MAX" value="24" enum="CallbackResourceUsage">
+			Represents the size of the [enum CallbackResourceUsage] enum.
 		</constant>
 		<constant name="DATA_FORMAT_R4G4_UNORM_PACK8" value="0" enum="DataFormat">
 			4-bit-per-channel red/green channel data format, packed into 8 bits. Values are in the [code][0.0, 1.0][/code] range.
